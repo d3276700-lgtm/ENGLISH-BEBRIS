@@ -156,7 +156,7 @@ function openLesson(n) {
   window.scrollTo(0, 0);
 }
 const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
-if (SR) { rec = new SR(); rec.lang = 'en-US'; }
+if (SR) { rec = new SR(); rec.lang = 'en-US'; rec.maxAlternatives = 5; }
 
 function draw() {
   const el = document.getElementById('list'); el.innerHTML = '';
@@ -243,9 +243,14 @@ function listen(i) {
   rec.onresult = e => {
     if (!run || my !== sess) return;
     got = true;
-    const said = e.results[0][0].transcript;
-    const cl = s => s.toLowerCase().replace(/[^a-z\s]/g, '').trim();
-    if (cl(said) === cl(data[i].en) || (cl(data[i].en).includes(cl(said)) && cl(said).length > 4)) {
+    const res = e.results[0];
+    let best = null;
+    for (let k = 0; k < res.length; k++) {
+      const r = check(data[i].en, res[k].transcript);
+      if (!best || r.missing.length < best.missing.length) best = r;
+    }
+    const said = best.said;
+    if (best.ok) {
       st(i, '✅ Отлично! Вы сказали: ' + said, '#ecfdf5', '#065f46');
       if (!done.includes(i)) {
         done.push(i);
@@ -257,7 +262,7 @@ function listen(i) {
         if (run) setTimeout(() => step(i + 1), 400);
       });
     } else {
-      fail(i, '❌ Неправильно. Услышано: «' + said + '»');
+      fail(i, '❌ Неправильно. Услышано: «' + said + '». Не хватает: ' + best.missing.join(', '));
     }
   };
   rec.onerror = e => {
@@ -271,6 +276,28 @@ function listen(i) {
     fail(i, '🤔 Не расслышал. Попробуйте ещё раз');
   };
   try { rec.start(); } catch (e) {}
+}
+
+// Приводим текст к простому виду: маленькие буквы, раскрытые сокращения, числа словами
+const NUM = {'1':'one','2':'two','3':'three','4':'four','5':'five','6':'six','7':'seven','8':'eight','9':'nine','10':'ten','20':'twenty'};
+function words(s) {
+  s = s.toLowerCase().replace(/[’‘`]/g, "'");
+  s = s.replace(/\$\s?(\d+)/g, '$1 dollars');
+  s = s.replace(/\bdon't\b/g, 'do not').replace(/\bdoesn't\b/g, 'does not')
+       .replace(/\bi'd\b/g, 'i would').replace(/\bit's\b/g, 'it is').replace(/\bi'm\b/g, 'i am');
+  s = s.replace(/[^a-z0-9\s]/g, ' ');
+  return s.split(/\s+/).filter(Boolean).map(w => NUM[w] || w);
+}
+
+// Проверка: сказаны ли все слова фразы (в длинной фразе прощаем одно)
+function check(expected, said) {
+  const need = words(expected), got = words(said);
+  const pool = {};
+  got.forEach(w => pool[w] = (pool[w] || 0) + 1);
+  const missing = [];
+  need.forEach(w => { if (pool[w] > 0) pool[w]--; else missing.push(w); });
+  const allowed = need.length >= 5 ? 1 : 0;
+  return { ok: missing.length <= allowed, missing, said };
 }
 
 // Ошибка: показываем надпись и кнопки, сами ничего не повторяем
