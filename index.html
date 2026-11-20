@@ -30,6 +30,9 @@
   .tabs { position: fixed; top: 60px; left: 0; right: 0; height: 46px; background: #fff; border-bottom: 1px solid #e5e7eb; display: flex; gap: 6px; align-items: center; justify-content: center; padding: 0 8px; z-index: 98; }
   .tab { background: #f3f4f6; border: 1px solid #e5e7eb; color: #374151; padding: 7px 14px; border-radius: 8px; font-weight: 600; font-size: 14px; cursor: pointer; }
   .tab.on { background: #1a56db; border-color: #1a56db; color: #fff; }
+  .acts { display: flex; gap: 8px; margin-top: 8px; flex-wrap: wrap; }
+  .mini { background: #0e9f6e; color: #fff; border: none; padding: 9px 14px; border-radius: 8px; font-weight: 600; font-size: 14px; cursor: pointer; }
+  .mini.alt { background: #1a56db; }
 </style>
 </head>
 <body>
@@ -138,7 +141,7 @@ let cur = parseInt(localStorage.getItem('lesson') || '0', 10);
 if (!(cur >= 0 && cur < lessons.length)) cur = 0;
 let data = lessons[cur];
 const key = () => 'u' + (cur + 1);
-let run = false, done = JSON.parse(localStorage.getItem(key()) || '[]'), rec = null;
+let run = false, done = JSON.parse(localStorage.getItem(key()) || '[]'), rec = null, sess = 0;
 
 function openLesson(n) {
   stopAll();
@@ -191,6 +194,7 @@ function st(i, t, bg, c) {
 
 function stopAll() {
   run = false;
+  sess++;
   window.speechSynthesis.cancel();
   if (rec) try { rec.abort(); } catch (e) {}
   document.querySelectorAll('.card').forEach(c => c.classList.remove('active'));
@@ -220,37 +224,77 @@ function step(i) {
     st(i, '🇷🇺 Перевод...', '#eff6ff', '#1e40af');
     say(data[i].ru, 'ru-RU', () => {
       if (!run) return;
-      if (!rec) {
-        st(i, '⚠️ Микрофон не поддерживается браузером', '#fef2f2', '#991b1b');
-        return;
-      }
-      st(i, '🎙️ Говорите по-английски...', '#fefce8', '#854d0e');
-      rec.onresult = e => {
-        if (!run) return;
-        const said = e.results[0][0].transcript;
-        const cl = s => s.toLowerCase().replace(/[^a-z\s]/g, '').trim();
-        if (cl(said) === cl(data[i].en) || (cl(data[i].en).includes(cl(said)) && cl(said).length > 4)) {
-          st(i, '✅ Отлично! Вы сказали: ' + said, '#ecfdf5', '#065f46');
-          if (!done.includes(i)) {
-            done.push(i);
-            localStorage.setItem(key(), JSON.stringify(done));
-            c.classList.add('done');
-            document.getElementById('prog').textContent = `Изучено: ${done.length} из ${data.length}`;
-          }
-          say('Okay!', 'en-US', () => {
-            if (run) setTimeout(() => step(i + 1), 400);
-          });
-        } else {
-          st(i, '❌ Услышано: ' + said + '. Повторите...', '#fef2f2', '#991b1b');
-          setTimeout(() => { if (run) step(i); }, 1400);
-        }
-      };
-      rec.onerror = () => {
-        if (run) setTimeout(() => step(i), 1000);
-      };
-      try { rec.start(); } catch (e) {}
+      listen(i);
     });
   });
+}
+
+// Включает микрофон для фразы i (без озвучки)
+function listen(i) {
+  if (!run) return;
+  const c = document.getElementById('c' + i);
+  if (!rec) {
+    st(i, '⚠️ Микрофон не поддерживается браузером', '#fef2f2', '#991b1b');
+    return;
+  }
+  const my = ++sess;
+  let got = false;
+  st(i, '🎙️ Говорите по-английски...', '#fefce8', '#854d0e');
+  rec.onresult = e => {
+    if (!run || my !== sess) return;
+    got = true;
+    const said = e.results[0][0].transcript;
+    const cl = s => s.toLowerCase().replace(/[^a-z\s]/g, '').trim();
+    if (cl(said) === cl(data[i].en) || (cl(data[i].en).includes(cl(said)) && cl(said).length > 4)) {
+      st(i, '✅ Отлично! Вы сказали: ' + said, '#ecfdf5', '#065f46');
+      if (!done.includes(i)) {
+        done.push(i);
+        localStorage.setItem(key(), JSON.stringify(done));
+        c.classList.add('done');
+        document.getElementById('prog').textContent = `Изучено: ${done.length} из ${data.length}`;
+      }
+      say('Okay!', 'en-US', () => {
+        if (run) setTimeout(() => step(i + 1), 400);
+      });
+    } else {
+      fail(i, '❌ Неправильно. Услышано: «' + said + '»');
+    }
+  };
+  rec.onerror = e => {
+    if (!run || my !== sess || got || e.error === 'aborted') return;
+    got = true;
+    fail(i, '🤔 Не расслышал. Попробуйте ещё раз');
+  };
+  rec.onend = () => {
+    if (!run || my !== sess || got) return;
+    got = true;
+    fail(i, '🤔 Не расслышал. Попробуйте ещё раз');
+  };
+  try { rec.start(); } catch (e) {}
+}
+
+// Ошибка: показываем надпись и кнопки, сами ничего не повторяем
+function fail(i, text) {
+  st(i, text, '#fef2f2', '#991b1b');
+  const e = document.getElementById('s' + i);
+  if (!e) return;
+  const b = document.createElement('div');
+  b.className = 'acts';
+  b.innerHTML = `<button class="mini" onclick="retry(${i})">🎙 Повторить</button><button class="mini alt" onclick="listenAgain(${i})">🔊 Послушать</button>`;
+  e.appendChild(b);
+}
+
+function retry(i) {
+  run = true;
+  document.getElementById('stopBtn').style.display = 'inline-block';
+  listen(i);
+}
+
+function listenAgain(i) {
+  run = true;
+  document.getElementById('stopBtn').style.display = 'inline-block';
+  st(i, '🔊 Слушайте на английском...', '#eff6ff', '#1e40af');
+  say(data[i].en, 'en-US', () => { if (run) listen(i); });
 }
 
 openLesson(cur);
