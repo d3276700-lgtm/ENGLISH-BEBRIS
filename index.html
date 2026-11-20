@@ -26,19 +26,28 @@
   .chip { background: #f9fafb; border: 1px solid #d1d5db; border-radius: 8px; padding: 4px 8px; font-size: 12px; cursor: pointer; }
   .ok { display: none; color: #0e9f6e; font-size: 13px; margin-left: 6px; }
   .card.done .ok { display: inline; }
+  body { padding-top: 120px; }
+  .tabs { position: fixed; top: 60px; left: 0; right: 0; height: 46px; background: #fff; border-bottom: 1px solid #e5e7eb; display: flex; gap: 6px; align-items: center; justify-content: center; padding: 0 8px; z-index: 98; }
+  .tab { background: #f3f4f6; border: 1px solid #e5e7eb; color: #374151; padding: 7px 14px; border-radius: 8px; font-weight: 600; font-size: 14px; cursor: pointer; }
+  .tab.on { background: #1a56db; border-color: #1a56db; color: #fff; }
 </style>
 </head>
 <body>
 <div class="top">
-  <div><b>Урок 1: Тренажёр</b><div style="font-size:12px;color:#4b5563" id="prog">Изучено: 0 из 40</div></div>
+  <div><b id="ttl">Урок 1: Тренажёр</b><div style="font-size:12px;color:#4b5563" id="prog">Изучено: 0 из 40</div></div>
   <div style="display:flex;gap:8px"><button class="stop" id="stopBtn" onclick="stopAll()">■ Стоп</button><button class="rst" onclick="resetAll()">Сброс</button></div>
+</div>
+<div class="tabs" id="tabs">
+  <button class="tab" onclick="openLesson(0)">Урок 1</button>
+  <button class="tab" onclick="openLesson(1)">Урок 2</button>
+  <button class="tab" onclick="openLesson(2)">Урок 3</button>
 </div>
 <div class="box">
   <div class="info">Нажмите <b>«▶ Начать»</b> напротив любой фразы. Диктор прочтёт, переведёт и включит микрофон.</div>
   <div id="list"></div>
 </div>
 <script>
-const data = [
+const L1 = [
   {en:"I understand you.", tr:"[ай андерстЭнд йу]", ru:"Я понимаю тебя.", w:[{e:"I",t:"[ай]",r:"я"},{e:"understand",t:"[андерстЭнд]",r:"понимать"},{e:"you",t:"[йу]",r:"тебя"}]},
   {en:"I see you.", tr:"[ай сИ: йу]", ru:"Я вижу тебя.", w:[{e:"I",t:"[ай]",r:"я"},{e:"see",t:"[сИ:]",r:"видеть"},{e:"you",t:"[йу]",r:"тебя"}]},
   {en:"I work online.", tr:"[ай wЁ:к онлАйн]", ru:"Я работаю онлайн.", w:[{e:"work",t:"[wЁ:к]",r:"работать"},{e:"online",t:"[онлАйн]",r:"онлайн"}]},
@@ -80,7 +89,69 @@ const data = [
   {en:"I want to buy two tickets.", tr:"[ай wонт ту бАЙ тУ: тИкитс]", ru:"Я хочу купить два билета.", w:[{e:"two",t:"[тУ:]",r:"два"},{e:"tickets",t:"[тИкитс]",r:"билеты"}]},
   {en:"I want to speak English fluently and correctly.", tr:"[ай wонт ту спИ:к Инглиш флУ:энтли энд корЭктли]", ru:"Я хочу говорить по-английски свободно и правильно.", w:[{e:"fluently",t:"[флУ:энтли]",r:"свободно"},{e:"correctly",t:"[корЭктли]",r:"правильно"}]}
 ];
-let run = false, done = JSON.parse(localStorage.getItem('u1') || '[]'), rec = null;
+const L2 = [
+  {en:"I want to go there.", tr:"[ай wонт ту гОУ зЭэ]", ru:"Я хочу пойти туда.", w:[{e:"want to",t:"[wонт ту]",r:"хотеть"},{e:"go there",t:"[гОУ зЭэ]",r:"идти туда"}]},
+  {en:"I want to speak English without mistakes.", tr:"[ай wонт ту спИ:к Инглиш wизАут мистЭЙкс]", ru:"Я хочу говорить по-английски без ошибок.", w:[{e:"without",t:"[wизАут]",r:"без"},{e:"mistakes",t:"[мистЭЙкс]",r:"ошибки"}]},
+  {en:"I'd like to visit England.", tr:"[айд лайк ту вИзит Инглэнд]", ru:"Я бы хотел посетить Англию.", w:[{e:"I'd like to",t:"[айд лайк ту]",r:"я бы хотел"},{e:"visit",t:"[вИзит]",r:"посещать"}]},
+  {en:"I'd like to buy a ticket.", tr:"[айд лайк ту бАЙ э тИкит]", ru:"Я бы хотел купить билет.", w:[{e:"buy",t:"[бАЙ]",r:"покупать"},{e:"ticket",t:"[тИкит]",r:"билет"}]},
+  {en:"We live in Russia.", tr:"[wи лив ин рАшэ]", ru:"Мы живём в России.", w:[{e:"we",t:"[wи]",r:"мы"},{e:"live",t:"[лив]",r:"жить"}]},
+  {en:"They work together.", tr:"[зэй wЁ:к тугЭзэ]", ru:"Они работают вместе.", w:[{e:"they",t:"[зэй]",r:"они"},{e:"together",t:"[тугЭзэ]",r:"вместе"}]},
+  {en:"We understand everything.", tr:"[wи андерстЭнд Эврисинг]", ru:"Мы всё понимаем.", w:[{e:"everything",t:"[Эврисинг]",r:"всё"}]},
+  {en:"They know this rule.", tr:"[зэй нОУ зис рУ:л]", ru:"Они знают это правило.", w:[{e:"know",t:"[нОУ]",r:"знать"},{e:"rule",t:"[рУ:л]",r:"правило"}]},
+  {en:"He works in a bank.", tr:"[хи wЁ:кс ин э бэнк]", ru:"Он работает в банке.", w:[{e:"he",t:"[хи]",r:"он"},{e:"works",t:"[wЁ:кс]",r:"работает"},{e:"bank",t:"[бэнк]",r:"банк"}]},
+  {en:"She lives in America.", tr:"[ши ливз ин эмЭрикэ]", ru:"Она живёт в Америке.", w:[{e:"she",t:"[ши]",r:"она"},{e:"lives",t:"[ливз]",r:"живёт"}]},
+  {en:"He speaks English very well.", tr:"[хи спИ:кс Инглиш вЭри wэл]", ru:"Он говорит по-английски очень хорошо.", w:[{e:"speaks",t:"[спИ:кс]",r:"говорит"},{e:"very well",t:"[вЭри wэл]",r:"очень хорошо"}]},
+  {en:"She likes this song.", tr:"[ши лайкс зис сонг]", ru:"Ей нравится эта песня.", w:[{e:"likes",t:"[лайкс]",r:"нравится"},{e:"song",t:"[сонг]",r:"песня"}]},
+  {en:"It helps me.", tr:"[ит хэлпс ми:]", ru:"Это помогает мне.", w:[{e:"helps",t:"[хэлпс]",r:"помогает"},{e:"me",t:"[ми:]",r:"мне"}]},
+  {en:"He wants to buy a car.", tr:"[хи wонтс ту бАЙ э кА:]", ru:"Он хочет купить машину.", w:[{e:"wants",t:"[wонтс]",r:"хочет"},{e:"car",t:"[кА:]",r:"машина"}]},
+  {en:"She studies at university.", tr:"[ши стАдиз эт йунивЁ:сити]", ru:"Она учится в университете.", w:[{e:"studies",t:"[стАдиз]",r:"учится"},{e:"university",t:"[йунивЁ:сити]",r:"университет"}]},
+  {en:"He goes to school.", tr:"[хи гОУз ту скУ:л]", ru:"Он ходит в школу.", w:[{e:"goes",t:"[гОУз]",r:"ходит"},{e:"school",t:"[скУ:л]",r:"школа"}]},
+  {en:"She does it every day.", tr:"[ши даз ит Эври дэй]", ru:"Она делает это каждый день.", w:[{e:"does",t:"[даз]",r:"делает"},{e:"every day",t:"[Эври дэй]",r:"каждый день"}]},
+  {en:"He has a good job.", tr:"[хи хэз э гуд джоб]", ru:"У него хорошая работа.", w:[{e:"has",t:"[хэз]",r:"имеет"},{e:"good",t:"[гуд]",r:"хороший"},{e:"job",t:"[джоб]",r:"работа"}]},
+  {en:"She has two brothers and a sister.", tr:"[ши хэз тУ: брАзэз энд э сИстэ]", ru:"У неё два брата и сестра.", w:[{e:"brothers",t:"[брАзэз]",r:"братья"},{e:"sister",t:"[сИстэ]",r:"сестра"}]},
+  {en:"It costs twenty dollars.", tr:"[ит костс тwЭнти дОлэз]", ru:"Это стоит двадцать долларов.", w:[{e:"costs",t:"[костс]",r:"стоит"},{e:"twenty",t:"[тwЭнти]",r:"двадцать"},{e:"dollars",t:"[дОлэз]",r:"доллары"}]}
+];
+const L3 = [
+  {en:"I don't understand.", tr:"[ай дОУнт андерстЭнд]", ru:"Я не понимаю.", w:[{e:"don't",t:"[дОУнт]",r:"не"},{e:"understand",t:"[андерстЭнд]",r:"понимать"}]},
+  {en:"I don't know.", tr:"[ай дОУнт нОУ]", ru:"Я не знаю.", w:[{e:"know",t:"[нОУ]",r:"знать"}]},
+  {en:"I don't want to do it.", tr:"[ай дОУнт wонт ту дУ: ит]", ru:"Я не хочу это делать.", w:[{e:"want to",t:"[wонт ту]",r:"хотеть"},{e:"do it",t:"[дУ: ит]",r:"делать это"}]},
+  {en:"We don't have free time.", tr:"[wи дОУнт хэв фрИ: тайм]", ru:"У нас нет свободного времени.", w:[{e:"free time",t:"[фрИ: тайм]",r:"свободное время"}]},
+  {en:"They don't live here.", tr:"[зэй дОУнт лив хИэ]", ru:"Они не живут здесь.", w:[{e:"here",t:"[хИэ]",r:"здесь"}]},
+  {en:"I don't agree with you.", tr:"[ай дОУнт эгрИ: wиз йу]", ru:"Я не согласен с тобой.", w:[{e:"agree",t:"[эгрИ:]",r:"соглашаться"},{e:"with you",t:"[wиз йу]",r:"с тобой"}]},
+  {en:"I don't remember this word.", tr:"[ай дОУнт римЭмбэ зис wЁ:д]", ru:"Я не помню это слово.", w:[{e:"remember",t:"[римЭмбэ]",r:"помнить"},{e:"word",t:"[wЁ:д]",r:"слово"}]},
+  {en:"He doesn't work here.", tr:"[хи дАзнт wЁ:к хИэ]", ru:"Он здесь не работает.", w:[{e:"doesn't",t:"[дАзнт]",r:"не"},{e:"work",t:"[wЁ:к]",r:"работать"}]},
+  {en:"She doesn't speak Russian.", tr:"[ши дАзнт спИ:к рАшн]", ru:"Она не говорит по-русски.", w:[{e:"speak",t:"[спИ:к]",r:"говорить"},{e:"Russian",t:"[рАшн]",r:"русский"}]},
+  {en:"He doesn't know this person.", tr:"[хи дАзнт нОУ зис пЁ:сн]", ru:"Он не знает этого человека.", w:[{e:"person",t:"[пЁ:сн]",r:"человек"}]},
+  {en:"She doesn't want to go there.", tr:"[ши дАзнт wонт ту гОУ зЭэ]", ru:"Она не хочет идти туда.", w:[{e:"go there",t:"[гОУ зЭэ]",r:"идти туда"}]},
+  {en:"It doesn't matter.", tr:"[ит дАзнт мЭтэ]", ru:"Это не имеет значения.", w:[{e:"matter",t:"[мЭтэ]",r:"иметь значение"}]},
+  {en:"It doesn't help me.", tr:"[ит дАзнт хэлп ми:]", ru:"Это мне не помогает.", w:[{e:"help",t:"[хэлп]",r:"помогать"}]},
+  {en:"He doesn't have a car.", tr:"[хи дАзнт хэв э кА:]", ru:"У него нет машины.", w:[{e:"have",t:"[хэв]",r:"иметь"}]},
+  {en:"She doesn't have enough money.", tr:"[ши дАзнт хэв инАф мАни]", ru:"У неё недостаточно денег.", w:[{e:"enough",t:"[инАф]",r:"достаточно"},{e:"money",t:"[мАни]",r:"деньги"}]},
+  {en:"My friend doesn't live in Moscow.", tr:"[май фрэнд дАзнт лив ин мОскоу]", ru:"Мой друг не живёт в Москве.", w:[{e:"my friend",t:"[май фрэнд]",r:"мой друг"}]},
+  {en:"This thing doesn't interest me.", tr:"[зис синг дАзнт Интрэст ми:]", ru:"Эта вещь меня не интересует.", w:[{e:"thing",t:"[синг]",r:"вещь"},{e:"interest",t:"[Интрэст]",r:"интересовать"}]},
+  {en:"I think it's a good idea.", tr:"[ай синк итс э гуд айдИэ]", ru:"Я думаю, это хорошая идея.", w:[{e:"think",t:"[синк]",r:"думать"},{e:"good idea",t:"[гуд айдИэ]",r:"хорошая идея"}]},
+  {en:"I need your help.", tr:"[ай нИ:д йО: хэлп]", ru:"Мне нужна твоя помощь.", w:[{e:"need",t:"[нИ:д]",r:"нуждаться"},{e:"your",t:"[йО:]",r:"твой"}]},
+  {en:"She needs this information.", tr:"[ши нИ:дз зис инфомЭЙшн]", ru:"Ей нужна эта информация.", w:[{e:"needs",t:"[нИ:дз]",r:"нуждается"},{e:"information",t:"[инфомЭЙшн]",r:"информация"}]}
+];
+const lessons = [L1, L2, L3];
+let cur = parseInt(localStorage.getItem('lesson') || '0', 10);
+if (!(cur >= 0 && cur < lessons.length)) cur = 0;
+let data = lessons[cur];
+const key = () => 'u' + (cur + 1);
+let run = false, done = JSON.parse(localStorage.getItem(key()) || '[]'), rec = null;
+
+function openLesson(n) {
+  stopAll();
+  cur = n;
+  data = lessons[cur];
+  localStorage.setItem('lesson', String(cur));
+  done = JSON.parse(localStorage.getItem(key()) || '[]');
+  document.getElementById('ttl').textContent = 'Урок ' + (cur + 1) + ': Тренажёр';
+  document.title = 'Урок ' + (cur + 1) + ': Тренажёр';
+  document.querySelectorAll('.tab').forEach((t, k) => t.classList.toggle('on', k === cur));
+  draw();
+  window.scrollTo(0, 0);
+}
 const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
 if (SR) { rec = new SR(); rec.lang = 'en-US'; }
 
@@ -95,7 +166,7 @@ function draw() {
 
 function resetAll() {
   done = [];
-  localStorage.removeItem('u1');
+  localStorage.removeItem(key());
   draw();
 }
 
@@ -162,7 +233,7 @@ function step(i) {
           st(i, '✅ Отлично! Вы сказали: ' + said, '#ecfdf5', '#065f46');
           if (!done.includes(i)) {
             done.push(i);
-            localStorage.setItem('u1', JSON.stringify(done));
+            localStorage.setItem(key(), JSON.stringify(done));
             c.classList.add('done');
             document.getElementById('prog').textContent = `Изучено: ${done.length} из ${data.length}`;
           }
@@ -182,7 +253,7 @@ function step(i) {
   });
 }
 
-draw();
+openLesson(cur);
 </script>
 </body>
 </html>
