@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Урок 1: Тренажёр</title>
 <style>
-  body { font-family: system-ui, -apple-system, sans-serif; background: #f3f4f6; color: #111827; margin: 0; padding: 74px 12px 40px; }
+  body { font-family: system-ui, -apple-system, sans-serif; background: #f3f4f6; color: #111827; margin: 0; padding: 120px 12px 40px; }
   .top { position: fixed; top: 0; left: 0; right: 0; height: 60px; background: #fff; border-bottom: 1px solid #e5e7eb; display: flex; align-items: center; justify-content: space-between; padding: 0 16px; z-index: 99; box-shadow: 0 2px 4px rgba(0,0,0,.05); }
   .box { max-width: 700px; margin: 0 auto; }
   .info { background: #eff6ff; border: 1px solid #bfdbfe; color: #1e40af; padding: 10px 14px; border-radius: 10px; margin-bottom: 14px; font-size: 14px; text-align: center; }
@@ -26,13 +26,13 @@
   .chip { background: #f9fafb; border: 1px solid #d1d5db; border-radius: 8px; padding: 4px 8px; font-size: 12px; cursor: pointer; }
   .ok { display: none; color: #0e9f6e; font-size: 13px; margin-left: 6px; }
   .card.done .ok { display: inline; }
-  body { padding-top: 120px; }
   .tabs { position: fixed; top: 60px; left: 0; right: 0; height: 46px; background: #fff; border-bottom: 1px solid #e5e7eb; display: flex; gap: 6px; align-items: center; justify-content: center; padding: 0 8px; z-index: 98; }
   .tab { background: #f3f4f6; border: 1px solid #e5e7eb; color: #374151; padding: 7px 14px; border-radius: 8px; font-weight: 600; font-size: 14px; cursor: pointer; }
   .tab.on { background: #1a56db; border-color: #1a56db; color: #fff; }
   .acts { display: flex; gap: 8px; margin-top: 8px; flex-wrap: wrap; }
   .mini { background: #0e9f6e; color: #fff; border: none; padding: 9px 14px; border-radius: 8px; font-weight: 600; font-size: 14px; cursor: pointer; }
   .mini.alt { background: #1a56db; }
+  .warn { display: none; background: #fffbeb; border: 1px solid #fcd34d; color: #92400e; padding: 10px 14px; border-radius: 10px; margin-bottom: 14px; font-size: 14px; text-align: center; }
 </style>
 </head>
 <body>
@@ -46,6 +46,7 @@
   <button class="tab" onclick="openLesson(2)">Урок 3</button>
 </div>
 <div class="box">
+  <div class="warn" id="warn"></div>
   <div class="info">Нажмите <b>«▶ Начать»</b> напротив любой фразы. Диктор прочтёт, переведёт и включит микрофон.</div>
   <div id="list"></div>
 </div>
@@ -137,111 +138,179 @@ const L3 = [
   {en:"She needs this information.", tr:"[ши нИ:дз зис инфомЭЙшн]", ru:"Ей нужна эта информация.", w:[{e:"needs",t:"[нИ:дз]",r:"нуждается"},{e:"information",t:"[инфомЭЙшн]",r:"информация"}]}
 ];
 const lessons = [L1, L2, L3];
-let cur = parseInt(localStorage.getItem('lesson') || '0', 10);
+
+// ===== Что умеет браузер =====
+// Во встроенном браузере Telegram (Android) и в некоторых других нет голоса диктора и/или микрофона.
+// Раньше из-за этого сайт падал. Теперь он просто работает без этих функций и показывает подсказку.
+const HAS_TTS = !!window.speechSynthesis && typeof SpeechSynthesisUtterance !== 'undefined';
+const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+let rec = null;
+if (SR) {
+  try { rec = new SR(); rec.lang = 'en-US'; rec.maxAlternatives = 5; } catch (e) { rec = null; }
+}
+
+// ===== Сохранение прогресса (не падает, если браузер запрещает хранить данные) =====
+const store = {
+  get(k, def) {
+    try { const v = localStorage.getItem(k); return v === null ? def : JSON.parse(v); } catch (e) { return def; }
+  },
+  set(k, v) { try { localStorage.setItem(k, JSON.stringify(v)); } catch (e) {} },
+  del(k) { try { localStorage.removeItem(k); } catch (e) {} }
+};
+const key = () => 'u' + (cur + 1);
+function loadDone() {
+  const v = store.get(key(), []);
+  return Array.isArray(v) ? v.filter(n => Number.isInteger(n) && n >= 0 && n < data.length) : [];
+}
+
+// ===== Состояние =====
+let cur = parseInt(store.get('lesson', 0), 10);
 if (!(cur >= 0 && cur < lessons.length)) cur = 0;
 let data = lessons[cur];
-const key = () => 'u' + (cur + 1);
-let run = false, done = JSON.parse(localStorage.getItem(key()) || '[]'), rec = null, sess = 0;
+let done = [];
+let run = false;   // идёт ли сейчас тренировка
+let sess = 0;      // номер текущего прослушивания микрофона (старые ответы игнорируются)
+let sayId = 0;     // номер текущей фразы диктора (старые «договорил» игнорируются)
 
+const $ = id => document.getElementById(id);
+const esc = s => String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+
+// ===== Уроки и карточки =====
 function openLesson(n) {
   stopAll();
   cur = n;
   data = lessons[cur];
-  localStorage.setItem('lesson', String(cur));
-  done = JSON.parse(localStorage.getItem(key()) || '[]');
-  document.getElementById('ttl').textContent = 'Урок ' + (cur + 1) + ': Тренажёр';
-  document.title = 'Урок ' + (cur + 1) + ': Тренажёр';
-  document.querySelectorAll('.tab').forEach((t, k) => t.classList.toggle('on', k === cur));
+  store.set('lesson', cur);
+  done = loadDone();
+  const t = 'Урок ' + (cur + 1) + ': Тренажёр';
+  $('ttl').textContent = t;
+  document.title = t;
+  document.querySelectorAll('.tab').forEach((b, k) => b.classList.toggle('on', k === cur));
   draw();
   window.scrollTo(0, 0);
 }
-const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
-if (SR) { rec = new SR(); rec.lang = 'en-US'; rec.maxAlternatives = 5; }
 
 function draw() {
-  const el = document.getElementById('list'); el.innerHTML = '';
-  data.forEach((p, i) => {
-    const wHtml = p.w.map(x => `<div class="chip" onclick="say('${x.e.replace(/'/g,"\\'")}','en-US')"><b>🔊 ${x.e}</b> <span style="color:#1a56db">${x.t}</span> <span style="color:#4b5563">${x.r}</span></div>`).join('');
-    el.innerHTML += `<div class="card ${done.includes(i)?'done':''}" id="c${i}"><div class="head"><div><div class="en" onclick="say('${p.en.replace(/'/g,"\\'")}','en-US')">${i+1}. ${p.en}<span class="ok">✓</span></div><div class="tr">${p.tr}</div><div class="ru">${p.ru}</div></div><button class="btn" onclick="go(${i})">▶ Начать</button></div><div class="st" id="s${i}"></div><div class="words">${wHtml}</div></div>`;
-  });
-  document.getElementById('prog').textContent = `Изучено: ${done.length} из ${data.length}`;
+  $('list').innerHTML = data.map((p, i) => {
+    const chips = p.w.map((x, k) =>
+      `<div class="chip" onclick="sayWord(${i},${k})"><b>🔊 ${esc(x.e)}</b> <span style="color:#1a56db">${esc(x.t)}</span> <span style="color:#4b5563">${esc(x.r)}</span></div>`
+    ).join('');
+    return `<div class="card ${done.includes(i) ? 'done' : ''}" id="c${i}">` +
+      `<div class="head"><div>` +
+      `<div class="en" onclick="sayPhrase(${i})">${i + 1}. ${esc(p.en)}<span class="ok">✓</span></div>` +
+      `<div class="tr">${esc(p.tr)}</div><div class="ru">${esc(p.ru)}</div>` +
+      `</div><button class="btn" onclick="go(${i})">▶ Начать</button></div>` +
+      `<div class="st" id="s${i}"></div><div class="words">${chips}</div></div>`;
+  }).join('');
+  showProgress();
+}
+
+function showProgress() {
+  $('prog').textContent = `Изучено: ${done.length} из ${data.length}`;
 }
 
 function resetAll() {
+  stopAll();
   done = [];
-  localStorage.removeItem(key());
+  store.del(key());
   draw();
 }
 
-function say(t, l, cb) {
-  window.speechSynthesis.cancel();
-  const u = new SpeechSynthesisUtterance(t);
-  u.lang = l;
-  u.rate = 0.9;
-  u.onend = cb;
-  u.onerror = cb;
-  window.speechSynthesis.speak(u);
+// ===== Голос диктора =====
+// cb вызывается ровно один раз, когда диктор договорил.
+// Страховка по времени: в Chrome иногда не приходит сигнал «договорил» и тренажёр зависал.
+function say(text, lang, cb) {
+  const id = ++sayId;
+  let finished = false;
+  const finish = () => {
+    if (finished || id !== sayId) return;
+    finished = true;
+    clearTimeout(timer);
+    if (cb) cb();
+  };
+  const timer = setTimeout(finish, 4000 + text.length * 150);
+  if (!HAS_TTS) { clearTimeout(timer); setTimeout(finish, 300); return; }
+  try {
+    window.speechSynthesis.cancel();
+    const u = new SpeechSynthesisUtterance(text);
+    u.lang = lang;
+    u.rate = 0.9;
+    u.onend = finish;
+    u.onerror = finish;
+    say.u = u; // держим ссылку, иначе Chrome может «потерять» фразу и не сообщить об окончании
+    window.speechSynthesis.speak(u);
+  } catch (e) { clearTimeout(timer); setTimeout(finish, 300); }
 }
 
-function st(i, t, bg, c) {
-  const e = document.getElementById('s' + i);
-  if (e) {
-    e.textContent = t;
-    e.style.background = bg;
-    e.style.color = c;
-  }
+function hush() {
+  sayId++;
+  if (HAS_TTS) try { window.speechSynthesis.cancel(); } catch (e) {}
 }
 
+// Нажатие на фразу или слово — просто послушать (тренировка при этом останавливается)
+function sayPhrase(i) { stopAll(); say(data[i].en, 'en-US'); }
+function sayWord(i, k) { stopAll(); say(data[i].w[k].e, 'en-US'); }
+
+// ===== Строка состояния под фразой =====
+function st(i, text, bg, color) {
+  const e = $('s' + i);
+  if (!e) return;
+  e.textContent = text;
+  e.style.background = bg;
+  e.style.color = color;
+}
+
+function setStopBtn(show) {
+  $('stopBtn').style.display = show ? 'inline-block' : 'none';
+}
+
+// ===== Тренировка =====
 function stopAll() {
   run = false;
   sess++;
-  window.speechSynthesis.cancel();
+  hush();
   if (rec) try { rec.abort(); } catch (e) {}
-  document.querySelectorAll('.card').forEach(c => c.classList.remove('active'));
-  document.getElementById('stopBtn').style.display = 'none';
+  document.querySelectorAll('.card.active').forEach(c => c.classList.remove('active'));
+  setStopBtn(false);
 }
 
 function go(i) {
   stopAll();
   run = true;
-  document.getElementById('stopBtn').style.display = 'inline-block';
+  setStopBtn(true);
   step(i);
 }
 
+// Фраза i: английский → перевод → микрофон
 function step(i) {
-  if (!run || i >= data.length) {
-    stopAll();
-    return;
-  }
-  document.querySelectorAll('.card').forEach(c => c.classList.remove('active'));
-  const c = document.getElementById('c' + i);
+  if (!run || i >= data.length) { stopAll(); return; }
+  document.querySelectorAll('.card.active').forEach(c => c.classList.remove('active'));
+  const c = $('c' + i);
   c.classList.add('active');
   c.scrollIntoView({ behavior: 'smooth', block: 'center' });
   st(i, '🔊 Слушайте на английском...', '#eff6ff', '#1e40af');
-
   say(data[i].en, 'en-US', () => {
     if (!run) return;
     st(i, '🇷🇺 Перевод...', '#eff6ff', '#1e40af');
-    say(data[i].ru, 'ru-RU', () => {
-      if (!run) return;
-      listen(i);
-    });
+    say(data[i].ru, 'ru-RU', () => { if (run) listen(i); });
   });
 }
 
 // Включает микрофон для фразы i (без озвучки)
 function listen(i) {
   if (!run) return;
-  const c = document.getElementById('c' + i);
   if (!rec) {
-    st(i, '⚠️ Микрофон не поддерживается браузером', '#fef2f2', '#991b1b');
+    run = false;
+    setStopBtn(false);
+    st(i, '⚠️ В этом браузере нет микрофона для распознавания речи. Откройте сайт в Chrome (Android, компьютер) или Safari (iPhone).', '#fef2f2', '#991b1b');
     return;
   }
   const my = ++sess;
   let got = false;
   st(i, '🎙️ Говорите по-английски...', '#fefce8', '#854d0e');
+
   rec.onresult = e => {
-    if (!run || my !== sess) return;
+    if (!run || my !== sess || got) return;
     got = true;
     const res = e.results[0];
     let best = null;
@@ -249,26 +318,17 @@ function listen(i) {
       const r = check(data[i].en, res[k].transcript);
       if (!best || r.missing.length < best.missing.length) best = r;
     }
-    const said = best.said;
-    if (best.ok) {
-      st(i, '✅ Отлично! Вы сказали: ' + said, '#ecfdf5', '#065f46');
-      if (!done.includes(i)) {
-        done.push(i);
-        localStorage.setItem(key(), JSON.stringify(done));
-        c.classList.add('done');
-        document.getElementById('prog').textContent = `Изучено: ${done.length} из ${data.length}`;
-      }
-      say('Okay!', 'en-US', () => {
-        if (run) setTimeout(() => step(i + 1), 400);
-      });
-    } else {
-      fail(i, '❌ Неправильно. Услышано: «' + said + '». Не хватает: ' + best.missing.join(', '));
-    }
+    if (best.ok) success(i, best.said);
+    else fail(i, '❌ Неправильно. Услышано: «' + best.said + '». Не хватает: ' + best.missing.join(', '));
   };
   rec.onerror = e => {
     if (!run || my !== sess || got || e.error === 'aborted') return;
     got = true;
-    fail(i, '🤔 Не расслышал. Попробуйте ещё раз');
+    if (e.error === 'not-allowed' || e.error === 'service-not-allowed') {
+      fail(i, '🚫 Нет доступа к микрофону. Разрешите микрофон для этого сайта в настройках браузера.');
+    } else {
+      fail(i, '🤔 Не расслышал. Попробуйте ещё раз');
+    }
   };
   rec.onend = () => {
     if (!run || my !== sess || got) return;
@@ -278,6 +338,44 @@ function listen(i) {
   try { rec.start(); } catch (e) {}
 }
 
+function success(i, said) {
+  st(i, '✅ Отлично! Вы сказали: ' + said, '#ecfdf5', '#065f46');
+  if (!done.includes(i)) {
+    done.push(i);
+    store.set(key(), done);
+    $('c' + i).classList.add('done');
+    showProgress();
+  }
+  say('Okay!', 'en-US', () => {
+    if (run) setTimeout(() => step(i + 1), 400);
+  });
+}
+
+// Ошибка: показываем надпись и кнопки, сами ничего не повторяем
+function fail(i, text) {
+  st(i, text, '#fef2f2', '#991b1b');
+  const e = $('s' + i);
+  if (!e) return;
+  const b = document.createElement('div');
+  b.className = 'acts';
+  b.innerHTML = `<button class="mini" onclick="retry(${i})">🎙 Повторить</button><button class="mini alt" onclick="listenAgain(${i})">🔊 Послушать</button>`;
+  e.appendChild(b);
+}
+
+function retry(i) {
+  run = true;
+  setStopBtn(true);
+  listen(i);
+}
+
+function listenAgain(i) {
+  run = true;
+  setStopBtn(true);
+  st(i, '🔊 Слушайте на английском...', '#eff6ff', '#1e40af');
+  say(data[i].en, 'en-US', () => { if (run) listen(i); });
+}
+
+// ===== Проверка ответа =====
 // Приводим текст к простому виду: маленькие буквы, раскрытые сокращения, числа словами
 const NUM = {'1':'one','2':'two','3':'three','4':'four','5':'five','6':'six','7':'seven','8':'eight','9':'nine','10':'ten','20':'twenty'};
 function words(s) {
@@ -289,7 +387,7 @@ function words(s) {
   return s.split(/\s+/).filter(Boolean).map(w => NUM[w] || w);
 }
 
-// Проверка: сказаны ли все слова фразы (в длинной фразе прощаем одно)
+// Сказаны ли все слова фразы (в длинной фразе, от 5 слов, прощаем одно)
 function check(expected, said) {
   const need = words(expected), got = words(said);
   const pool = {};
@@ -300,30 +398,12 @@ function check(expected, said) {
   return { ok: missing.length <= allowed, missing, said };
 }
 
-// Ошибка: показываем надпись и кнопки, сами ничего не повторяем
-function fail(i, text) {
-  st(i, text, '#fef2f2', '#991b1b');
-  const e = document.getElementById('s' + i);
-  if (!e) return;
-  const b = document.createElement('div');
-  b.className = 'acts';
-  b.innerHTML = `<button class="mini" onclick="retry(${i})">🎙 Повторить</button><button class="mini alt" onclick="listenAgain(${i})">🔊 Послушать</button>`;
-  e.appendChild(b);
+// ===== Запуск =====
+if (!HAS_TTS || !rec) {
+  const miss = [!HAS_TTS && 'голоса диктора', !rec && 'распознавания речи'].filter(Boolean).join(' и ');
+  $('warn').innerHTML = '⚠️ В этом браузере нет ' + miss + '. Фразы можно читать, но для полной тренировки откройте сайт в <b>Chrome</b> (Android, компьютер) или <b>Safari</b> (iPhone). Если открыли из Telegram — нажмите «⋮» → «Открыть в браузере».';
+  $('warn').style.display = 'block';
 }
-
-function retry(i) {
-  run = true;
-  document.getElementById('stopBtn').style.display = 'inline-block';
-  listen(i);
-}
-
-function listenAgain(i) {
-  run = true;
-  document.getElementById('stopBtn').style.display = 'inline-block';
-  st(i, '🔊 Слушайте на английском...', '#eff6ff', '#1e40af');
-  say(data[i].en, 'en-US', () => { if (run) listen(i); });
-}
-
 openLesson(cur);
 </script>
 </body>
