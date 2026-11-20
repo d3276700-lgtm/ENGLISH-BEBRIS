@@ -2,10 +2,11 @@
 <html lang="ru">
 <head>
 <meta charset="UTF-8">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22%3E%3Ctext y=%22.9em%22 font-size=%2290%22%3E🇬🇧%3C/text%3E%3C/svg%3E">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Урок 1: Тренажёр</title>
 <style>
-  body { font-family: system-ui, -apple-system, sans-serif; background: #f3f4f6; color: #111827; margin: 0; padding: 120px 12px 40px; }
+  body { font-family: system-ui, -apple-system, sans-serif; background: #f3f4f6; color: #111827; margin: 0; padding: 126px 12px 40px; }
   .top { position: fixed; top: 0; left: 0; right: 0; height: 60px; background: #fff; border-bottom: 1px solid #e5e7eb; display: flex; align-items: center; justify-content: space-between; padding: 0 16px; z-index: 99; box-shadow: 0 2px 4px rgba(0,0,0,.05); }
   .box { max-width: 700px; margin: 0 auto; }
   .info { background: #eff6ff; border: 1px solid #bfdbfe; color: #1e40af; padding: 10px 14px; border-radius: 10px; margin-bottom: 14px; font-size: 14px; text-align: center; }
@@ -16,21 +17,21 @@
   .en { font-size: 19px; font-weight: 700; cursor: pointer; }
   .tr { font-size: 14px; color: #1a56db; margin-top: 2px; }
   .ru { font-size: 14px; color: #4b5563; margin-top: 3px; }
-  .btn { background: #1a56db; color: #fff; border: none; padding: 10px 14px; border-radius: 10px; font-weight: 600; font-size: 14px; cursor: pointer; flex-shrink: 0; }
+  .btn { background: #1a56db; color: #fff; border: none; padding: 10px 14px; min-height: 42px; border-radius: 10px; font-weight: 600; font-size: 14px; cursor: pointer; flex-shrink: 0; }
   .card.active .btn { background: #0e9f6e; }
-  .stop { background: #e02424; color: #fff; border: none; padding: 8px 14px; border-radius: 8px; font-weight: 600; display: none; cursor: pointer; }
-  .rst { background: #e5e7eb; border: none; padding: 8px 10px; border-radius: 8px; font-size: 12px; cursor: pointer; }
+  .stop { background: #e02424; color: #fff; border: none; padding: 8px 14px; min-height: 40px; border-radius: 8px; font-weight: 600; display: none; cursor: pointer; }
+  .rst { background: #e5e7eb; border: none; padding: 8px 12px; min-height: 40px; border-radius: 8px; font-size: 13px; cursor: pointer; }
   .st { display: none; margin-top: 8px; padding: 8px 10px; border-radius: 8px; font-size: 13px; font-weight: 600; }
   .card.active .st { display: block; }
   .words { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 10px; padding-top: 10px; border-top: 1px dashed #e5e7eb; }
   .chip { background: #f9fafb; border: 1px solid #d1d5db; border-radius: 8px; padding: 4px 8px; font-size: 12px; cursor: pointer; }
   .ok { display: none; color: #0e9f6e; font-size: 13px; margin-left: 6px; }
   .card.done .ok { display: inline; }
-  .tabs { position: fixed; top: 60px; left: 0; right: 0; height: 46px; background: #fff; border-bottom: 1px solid #e5e7eb; display: flex; gap: 6px; align-items: center; justify-content: center; padding: 0 8px; z-index: 98; }
-  .tab { background: #f3f4f6; border: 1px solid #e5e7eb; color: #374151; padding: 7px 14px; border-radius: 8px; font-weight: 600; font-size: 14px; cursor: pointer; }
+  .tabs { position: fixed; top: 60px; left: 0; right: 0; height: 52px; background: #fff; border-bottom: 1px solid #e5e7eb; display: flex; gap: 6px; align-items: center; justify-content: center; padding: 0 8px; z-index: 98; }
+  .tab { background: #f3f4f6; border: 1px solid #e5e7eb; color: #374151; padding: 7px 14px; min-height: 40px; border-radius: 8px; font-weight: 600; font-size: 14px; cursor: pointer; }
   .tab.on { background: #1a56db; border-color: #1a56db; color: #fff; }
   .acts { display: flex; gap: 8px; margin-top: 8px; flex-wrap: wrap; }
-  .mini { background: #0e9f6e; color: #fff; border: none; padding: 9px 14px; border-radius: 8px; font-weight: 600; font-size: 14px; cursor: pointer; }
+  .mini { background: #0e9f6e; color: #fff; border: none; padding: 9px 14px; min-height: 42px; border-radius: 8px; font-weight: 600; font-size: 14px; cursor: pointer; }
   .mini.alt { background: #1a56db; }
   .warn { display: none; background: #fffbeb; border: 1px solid #fcd34d; color: #92400e; padding: 10px 14px; border-radius: 10px; margin-bottom: 14px; font-size: 14px; text-align: center; }
 </style>
@@ -234,6 +235,8 @@ function say(text, lang, cb) {
     window.speechSynthesis.cancel();
     const u = new SpeechSynthesisUtterance(text);
     u.lang = lang;
+    const v = pickVoice(lang);
+    if (v) u.voice = v;
     u.rate = 0.9;
     u.onend = finish;
     u.onerror = finish;
@@ -241,6 +244,16 @@ function say(text, lang, cb) {
     window.speechSynthesis.speak(u);
   } catch (e) { clearTimeout(timer); setTimeout(finish, 300); }
 }
+
+// Явно выбираем голос нужного языка (иначе на некоторых телефонах русский читает английский голос)
+function pickVoice(lang) {
+  let vs = [];
+  try { vs = window.speechSynthesis.getVoices() || []; } catch (e) {}
+  const norm = l => String(l || '').replace('_', '-').toLowerCase();
+  const want = norm(lang), base = want.slice(0, 2);
+  return vs.find(v => norm(v.lang) === want) || vs.find(v => norm(v.lang).startsWith(base)) || null;
+}
+if (HAS_TTS) try { window.speechSynthesis.getVoices(); window.speechSynthesis.onvoiceschanged = () => {}; } catch (e) {}
 
 function hush() {
   sayId++;
@@ -283,7 +296,8 @@ function go(i) {
 
 // Фраза i: английский → перевод → микрофон
 function step(i) {
-  if (!run || i >= data.length) { stopAll(); return; }
+  if (!run) { stopAll(); return; }
+  if (i >= data.length) { finishLesson(); return; }
   document.querySelectorAll('.card.active').forEach(c => c.classList.remove('active'));
   const c = $('c' + i);
   c.classList.add('active');
@@ -296,6 +310,15 @@ function step(i) {
   });
 }
 
+// После последней фразы — поздравление (карточка остаётся открытой, чтобы надпись была видна)
+function finishLesson() {
+  run = false;
+  sess++;
+  setStopBtn(false);
+  st(data.length - 1, `🎉 Урок пройден! Изучено ${done.length} из ${data.length}.` +
+    (done.length < data.length ? ' Фразы без ✓ можно повторить кнопкой «▶ Начать».' : ''), '#ecfdf5', '#065f46');
+}
+
 // Включает микрофон для фразы i (без озвучки)
 function listen(i) {
   if (!run) return;
@@ -306,12 +329,15 @@ function listen(i) {
     return;
   }
   const my = ++sess;
-  let got = false;
+  let got = false;      // ответ уже обработан
+  let started = false;  // наш сеанс микрофона действительно запустился
+  const mine = () => run && my === sess && started && !got;
   st(i, '🎙️ Говорите по-английски...', '#fefce8', '#854d0e');
 
   rec.onresult = e => {
-    if (!run || my !== sess || got) return;
+    if (!mine()) return;
     got = true;
+    clearTimeout(guard);
     const res = e.results[0];
     let best = null;
     for (let k = 0; k < res.length; k++) {
@@ -322,21 +348,42 @@ function listen(i) {
     else fail(i, '❌ Неправильно. Услышано: «' + best.said + '». Не хватает: ' + best.missing.join(', '));
   };
   rec.onerror = e => {
-    if (!run || my !== sess || got || e.error === 'aborted') return;
+    if (!mine() || e.error === 'aborted') return;
     got = true;
-    if (e.error === 'not-allowed' || e.error === 'service-not-allowed') {
-      fail(i, '🚫 Нет доступа к микрофону. Разрешите микрофон для этого сайта в настройках браузера.');
-    } else {
-      fail(i, '🤔 Не расслышал. Попробуйте ещё раз');
-    }
+    clearTimeout(guard);
+    fail(i, MIC_ERR[e.error] || MIC_ERR['no-speech']);
   };
   rec.onend = () => {
+    if (!mine()) return;
+    got = true;
+    clearTimeout(guard);
+    fail(i, MIC_ERR['no-speech']);
+  };
+
+  // Ограничение по времени: если браузер ничего не сообщил за 15 секунд — считаем, что не расслышал
+  const guard = setTimeout(() => {
     if (!run || my !== sess || got) return;
     got = true;
-    fail(i, '🤔 Не расслышал. Попробуйте ещё раз');
+    try { rec.abort(); } catch (e) {}
+    fail(i, MIC_ERR['no-speech']);
+  }, 15000);
+
+  // Если прошлое прослушивание ещё не закончилось, браузер не даёт включить микрофон — пробуем снова
+  const tryStart = n => {
+    if (!run || my !== sess || got) return;
+    try { rec.start(); started = true; }
+    catch (e) { if (n < 15) setTimeout(() => tryStart(n + 1), 200); }
   };
-  try { rec.start(); } catch (e) {}
+  tryStart(0);
 }
+
+const MIC_ERR = {
+  'no-speech': '🤔 Не расслышал. Попробуйте ещё раз',
+  'not-allowed': '🚫 Нет доступа к микрофону. Разрешите его: нажмите на значок 🔒 (или ⓘ) слева от адреса сайта → «Микрофон» → «Разрешить», затем «Повторить». На iPhone: Настройки → Safari → Микрофон → Разрешить.',
+  'audio-capture': '🎤 Микрофон не найден. Проверьте, что он подключён и не занят другой программой, затем нажмите «Повторить».',
+  'network': '📶 Нет интернета — распознавание речи без него не работает. Проверьте связь и нажмите «Повторить».',
+};
+MIC_ERR['service-not-allowed'] = MIC_ERR['not-allowed'];
 
 function success(i, said) {
   st(i, '✅ Отлично! Вы сказали: ' + said, '#ecfdf5', '#065f46');
@@ -377,12 +424,21 @@ function listenAgain(i) {
 
 // ===== Проверка ответа =====
 // Приводим текст к простому виду: маленькие буквы, раскрытые сокращения, числа словами
-const NUM = {'1':'one','2':'two','3':'three','4':'four','5':'five','6':'six','7':'seven','8':'eight','9':'nine','10':'ten','20':'twenty'};
+const NUM = {'0':'zero','1':'one','2':'two','3':'three','4':'four','5':'five','6':'six','7':'seven','8':'eight','9':'nine','10':'ten',
+  '11':'eleven','12':'twelve','13':'thirteen','14':'fourteen','15':'fifteen','16':'sixteen','17':'seventeen','18':'eighteen','19':'nineteen',
+  '20':'twenty','30':'thirty','40':'forty','50':'fifty','60':'sixty','70':'seventy','80':'eighty','90':'ninety','100':'hundred'};
 function words(s) {
   s = s.toLowerCase().replace(/[’‘`]/g, "'");
   s = s.replace(/\$\s?(\d+)/g, '$1 dollars');
-  s = s.replace(/\bdon't\b/g, 'do not').replace(/\bdoesn't\b/g, 'does not')
-       .replace(/\bi'd\b/g, 'i would').replace(/\bit's\b/g, 'it is').replace(/\bi'm\b/g, 'i am');
+  // сокращения → полные формы (I'm = I am, don't = do not, can't = can not ...)
+  s = s.replace(/\bcan't\b|\bcannot\b/g, 'can not').replace(/\bwon't\b/g, 'will not').replace(/n't\b/g, ' not')
+       .replace(/\b(dont|doesnt|didnt|isnt|arent|wasnt)\b/g, w => w.slice(0, -2) + ' not')
+       .replace(/\bi'm\b/g, 'i am').replace(/'re\b/g, ' are').replace(/'ll\b/g, ' will').replace(/'ve\b/g, ' have')
+       .replace(/\bi'd\b/g, 'i would').replace(/\b(it|that|what|he|she|there|here)'s\b/g, '$1 is');
+  // как ещё распознавание может записать то же самое
+  s = s.replace(/\bwanna\b/g, 'want to').replace(/\bgonna\b/g, 'going to').replace(/\bgotta\b/g, 'got to')
+       .replace(/\beveryday\b/g, 'every day').replace(/\bon[- ]line\b/g, 'online').replace(/\btravell/g, 'travel')
+       .replace(/\bok\b/g, 'okay');
   s = s.replace(/[^a-z0-9\s]/g, ' ');
   return s.split(/\s+/).filter(Boolean).map(w => NUM[w] || w);
 }
