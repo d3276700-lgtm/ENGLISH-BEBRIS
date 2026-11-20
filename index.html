@@ -1,0 +1,226 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>Английский: Урок 1 — Голосовой тренажёр</title>
+<style>
+  :root {
+    --primary: #1a56db;
+    --primary-hover: #1e429f;
+    --success: #0e9f6e;
+    --danger: #e02424;
+    --bg: #f3f4f6;
+    --card-bg: #ffffff;
+    --text-main: #111827;
+    --text-muted: #4b5563;
+    --border: #e5e7eb;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    background-color: var(--bg);
+    color: var(--text-main);
+    padding-top: 76px;
+    padding-bottom: 40px;
+    line-height: 1.4;
+  }
+  .top-bar {
+    position: fixed;
+    top: 0; left: 0; right: 0;
+    height: 64px;
+    background: #ffffff;
+    border-bottom: 1px solid var(--border);
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 0 16px;
+    z-index: 1000;
+    box-shadow: 0 2px 6px rgba(0,0,0,0.05);
+  }
+  .top-title { font-weight: 700; font-size: 16px; }
+  .top-sub { font-size: 12px; color: var(--text-muted); }
+  .top-controls { display: flex; gap: 8px; align-items: center; }
+  .btn-stop {
+    background: var(--danger);
+    color: #fff;
+    border: none;
+    padding: 8px 14px;
+    border-radius: 8px;
+    font-weight: 600;
+    font-size: 14px;
+    cursor: pointer;
+    display: none;
+  }
+  .btn-reset {
+    background: #e5e7eb;
+    color: #374151;
+    border: none;
+    padding: 8px 10px;
+    border-radius: 8px;
+    font-size: 12px;
+    cursor: pointer;
+  }
+  .container {
+    max-width: 720px;
+    margin: 0 auto;
+    padding: 0 12px;
+  }
+  .status-banner {
+    background: #eff6ff;
+    border: 1px solid #bfdbfe;
+    color: #1e40af;
+    padding: 10px 14px;
+    border-radius: 10px;
+    margin-bottom: 14px;
+    font-size: 14px;
+    text-align: center;
+  }
+  .card {
+    background: var(--card-bg);
+    border: 2px solid var(--border);
+    border-radius: 14px;
+    padding: 16px;
+    margin-bottom: 14px;
+    transition: all 0.2s ease;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.04);
+  }
+  .card.active {
+    border-color: var(--primary);
+    background: #f8faff;
+    box-shadow: 0 4px 14px rgba(26, 86, 219, 0.15);
+  }
+  .card.done {
+    border-color: #a7f3d0;
+    background: #f6fefb;
+  }
+  .card-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    gap: 12px;
+    margin-bottom: 10px;
+  }
+  .phrase-en {
+    font-size: 20px;
+    font-weight: 700;
+    color: #111827;
+    cursor: pointer;
+  }
+  .phrase-tr {
+    font-size: 15px;
+    color: var(--primary);
+    font-weight: 500;
+    margin-top: 2px;
+  }
+  .phrase-ru {
+    font-size: 15px;
+    color: var(--text-muted);
+    margin-top: 4px;
+  }
+  .btn-start {
+    background: var(--primary);
+    color: white;
+    border: none;
+    padding: 10px 16px;
+    border-radius: 10px;
+    font-weight: 600;
+    font-size: 14px;
+    cursor: pointer;
+    white-space: nowrap;
+    flex-shrink: 0;
+  }
+  .btn-start:hover { background: var(--primary-hover); }
+  .card.active .btn-start { background: var(--success); }
+  .card-status {
+    font-size: 14px;
+    font-weight: 600;
+    margin: 8px 0;
+    padding: 8px 12px;
+    border-radius: 8px;
+    background: #f3f4f6;
+    display: none;
+  }
+  .card.active .card-status { display: block; }
+  .words-list {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    margin-top: 10px;
+    padding-top: 10px;
+    border-top: 1px dashed var(--border);
+  }
+  .word-chip {
+    background: #f9fafb;
+    border: 1px solid #d1d5db;
+    border-radius: 8px;
+    padding: 5px 9px;
+    font-size: 13px;
+    cursor: pointer;
+    display: inline-flex;
+    flex-direction: column;
+  }
+  .word-chip:active { background: #e5e7eb; }
+  .w-en { font-weight: 700; color: #111827; }
+  .w-tr { font-size: 11px; color: var(--primary); }
+  .w-ru { font-size: 11px; color: var(--text-muted); }
+  .done-badge {
+    display: none;
+    color: var(--success);
+    font-weight: 700;
+    font-size: 13px;
+    margin-left: 6px;
+  }
+  .card.done .done-badge { display: inline; }
+</style>
+</head>
+<body>
+
+<div class="top-bar">
+  <div>
+    <div class="top-title">Урок 1: Тренажёр</div>
+    <div class="top-sub" id="progressText">Изучено: 0 из 40</div>
+  </div>
+  <div class="top-controls">
+    <button class="btn-stop" id="stopBtn" onclick="stopTraining()">■ Стоп</button>
+    <button class="btn-reset" onclick="resetProgress()">Сброс</button>
+  </div>
+</div>
+
+<div class="container">
+  <div class="status-banner" id="globalBanner">
+    Нажмите <b>«▶️ Начать»</b> напротив любой фразы. Диктор прочтёт её, переведёт и включит микрофон для проверки.
+  </div>
+  <div id="cardsContainer"></div>
+</div>
+
+<script>
+const phrases = [
+  { en: "I understand you.", tr: "[ай андерстЭнд йу]", ru: "Я понимаю тебя.", words: [["I", "[ай]", "я"], ["understand", "[андерстЭнд]", "понимать"], ["you", "[йу]", "тебя, вас"]] },
+  { en: "I see you.", tr: "[ай сИ: йу]", ru: "Я вижу тебя.", words: [["I", "[ай]", "я"], ["see", "[сИ:]", "видеть"], ["you", "[йу]", "тебя, вас"]] },
+  { en: "I work online.", tr: "[ай wЁ:к онлАйн]", ru: "Я работаю онлайн.", words: [["I", "[ай]", "я"], ["work", "[wЁ:к]", "работать"], ["online", "[онлАйн]", "онлайн"]] },
+  { en: "I live in Russia.", tr: "[ай лив ин рАшэ]", ru: "Я живу в России.", words: [["I", "[ай]", "я"], ["live", "[лив]", "жить"], ["in", "[ин]", "в"], ["Russia", "[рАшэ]", "Россия"]] },
+  { en: "I live in Moscow.", tr: "[ай лив ин мОскоу]", ru: "Я живу в Москве.", words: [["live", "[лив]", "жить"], ["in", "[ин]", "в"], ["Moscow", "[мОскоу]", "Москва"]] },
+  { en: "I live in London.", tr: "[ай лив ин лАндэн]", ru: "Я живу в Лондоне.", words: [["in", "[ин]", "в"], ["London", "[лАндэн]", "Лондон"]] },
+  { en: "I live in New York.", tr: "[ай лив ин нью йО:к]", ru: "Я живу в Нью-Йорке.", words: [["New York", "[нью йО:к]", "Нью-Йорк"]] },
+  { en: "I speak English.", tr: "[ай спИ:к Инглиш]", ru: "Я говорю по-английски.", words: [["speak", "[спИ:к]", "говорить"], ["English", "[Инглиш]", "английский"]] },
+  { en: "I speak Spanish and German.", tr: "[ай спИ:к спЭниш энд джЁ:мэн]", ru: "Я говорю по-испански и по-немецки.", words: [["Spanish", "[спЭниш]", "испанский"], ["and", "[энд]", "и"], ["German", "[джЁ:мэн]", "немецкий"]] },
+  { en: "I speak French, Italian and Chinese.", tr: "[ай спИ:к фрэнч, итЭльен энд чайнИ:з]", ru: "Я говорю по-французски, по-итальянски и по-китайски.", words: [["French", "[фрэнч]", "французский"], ["Italian", "[итЭльен]", "итальянский"], ["Chinese", "[чайнИ:з]", "китайский"]] },
+  { en: "I learn English online.", tr: "[ай лЁ:н Инглиш онлАйн]", ru: "Я учу английский онлайн.", words: [["learn", "[лЁ:н]", "учить, изучать"], ["English", "[Инглиш]", "английский"], ["online", "[онлАйн]", "онлайн"]] },
+  { en: "I study in England.", tr: "[ай стАди ин Инглэнд]", ru: "Я учусь в Англии.", words: [["study", "[стАди]", "учиться (в заведении)"], ["England", "[Инглэнд]", "Англия"]] },
+  { en: "I work and study.", tr: "[ай wЁ:к энд стАди]", ru: "Я работаю и учусь.", words: [["work", "[wЁ:к]", "работать"], ["and", "[энд]", "и"], ["study", "[стАди]", "учиться"]] },
+  { en: "I like music and sport.", tr: "[ай лайк мьЮзик энд спо:т]", ru: "Мне нравится музыка и спорт.", words: [["like", "[лайк]", "нравиться"], ["music", "[мьЮзик]", "музыка"], ["sport", "[спо:т]", "спорт"]] },
+  { en: "I like it.", tr: "[ай лайк ит]", ru: "Мне это нравится.", words: [["like", "[лайк]", "нравиться"], ["it", "[ит]", "это"]] },
+  { en: "I know this place.", tr: "[ай нОУ зис плЭЙс]", ru: "Я знаю это место.", words: [["know", "[нОУ]", "знать"], ["this", "[зис]", "этот, эта, это"], ["place", "[плЭЙс]", "место"]] },
+  { en: "I see this person.", tr: "[ай сИ: зис пЁ:сн]", ru: "Я вижу этого человека.", words: [["see", "[сИ:]", "видеть"], ["this", "[зис]", "этот, этого"], ["person", "[пЁ:сн]", "человек"]] },
+  { en: "I like this city.", tr: "[ай лайк зис сИти]", ru: "Мне нравится этот город.", words: [["this", "[зис]", "этот"], ["city", "[сИти]", "город"]] },
+  { en: "I like it very much.", tr: "[ай лайк ит вЭри мач]", ru: "Мне это очень сильно нравится.", words: [["very much", "[вЭри мач]", "очень сильно"]] },
+  { en: "I love you so much.", tr: "[ай лав йу сОУ мач]", ru: "Я так сильно тебя люблю.", words: [["love", "[лав]", "любить"], ["so much", "[сОУ мач]", "так сильно"]] },
+  { en: "I really like it.", tr: "[ай рИэли лайк ит]", ru: "Мне это очень нравится.", words: [["really", "[рИэли]", "действительно, очень"]] },
+  { en: "I really like this place.", tr: "[ай рИэли лайк зис плЭЙс]", ru: "Мне очень нравится это место.", words: [["really", "[рИэли]", "очень"], ["this place", "[зис плЭЙс]", "это место"]] },
+  { en: "I like traveling.", tr: "[ай лайк трЭвэлинг]", ru: "Мне нравится путешествовать.", words: [["travel", "[трЭвэл]", "путешествовать"], ["traveling", "[трЭвэлинг]", "путешествовать (процесс)"]] },
+  { en: "I live here.", tr: "[ай лив хИэ]", ru: "Я живу здесь.", words: [["live", "[лив]", "жить"], ["here", "[хИэ]", "здесь, сюда"]] },
+  { en: "I work there.", tr: "[ай wЁ:к зЭэ]", ru: "Я работаю там.", words: [["work", "[wЁ:к]", "работать"], ["there", "[зЭэ]", "там, туда"]] },
+  { en: "I often go there.", tr: "[ай Офэн гОУ зЭэ]", ru: "Я часто туда хожу.", words: [["often", "[Офэн]", "часто"], ["go there", "[гОУ зЭэ]", "ходить туда"]] },
+  { en: "I often do it.", tr: "[ай Офэн дУ: ит]", ru: "Я часто это делаю.", words: [["often", "[Офэн]", "часто"], ["do", "[дУ:]", "делать"], ["it", "[ит]", "это"]] },
+  { en: "I travel very often.", tr: "[ай трЭвэл вЭри Офэн]", ru: "Я путешествую очень часто.", words: [["travel", "[трЭвэл]", "путешествовать"], ["very often", "[вЭри Офэн]", "очень часто"]] },
