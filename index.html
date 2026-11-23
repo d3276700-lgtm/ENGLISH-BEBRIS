@@ -33,6 +33,9 @@
   .acts { display: flex; gap: 8px; margin-top: 8px; flex-wrap: wrap; }
   .mini { background: #0e9f6e; color: #fff; border: none; padding: 9px 14px; min-height: 42px; border-radius: 8px; font-weight: 600; font-size: 14px; cursor: pointer; }
   .mini.alt { background: #1a56db; }
+  .chk { display: flex; flex-wrap: wrap; align-items: center; justify-content: center; gap: 8px; padding: 8px 12px; border-radius: 10px; margin-bottom: 10px; font-size: 14px; font-weight: 600; text-align: center; border: 1px solid #e5e7eb; background: #f9fafb; color: #374151; }
+  .chk.good { background: #ecfdf5; border-color: #a7f3d0; color: #065f46; }
+  .chk.bad { background: #fef2f2; border-color: #fecaca; color: #991b1b; }
   .warn { display: none; background: #fffbeb; border: 1px solid #fcd34d; color: #92400e; padding: 10px 14px; border-radius: 10px; margin-bottom: 14px; font-size: 14px; text-align: center; }
 </style>
 </head>
@@ -48,6 +51,7 @@
 </div>
 <div class="box">
   <div class="warn" id="warn"></div>
+  <div class="chk" id="chk"><span id="chkT">⏳ Проверяю звук и микрофон...</span><button class="mini alt" onclick="fullCheck()">🔧 Проверить звук и микрофон</button></div>
   <div class="info">Нажмите <b>«▶ Начать»</b> напротив любой фразы. Диктор прочтёт, переведёт и включит микрофон.</div>
   <div id="list"></div>
 </div>
@@ -172,6 +176,9 @@ let done = [];
 let run = false;   // идёт ли сейчас тренировка
 let sess = 0;      // номер текущего прослушивания микрофона (старые ответы игнорируются)
 let sayId = 0;     // номер текущей фразы диктора (старые «договорил» игнорируются)
+let ttsSilent = false; // диктор не начал говорить (нет звука)
+let ttsErr = null;     // последняя ошибка диктора
+let micErr = null;     // последняя ошибка микрофона (кроме «ничего не сказали»)
 
 const $ = id => document.getElementById(id);
 const esc = s => String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
@@ -223,13 +230,18 @@ function resetAll() {
 function say(text, lang, cb) {
   const id = ++sayId;
   let finished = false;
+  let spoke = false; // диктор действительно начал говорить (пришёл сигнал «начал»)
   const finish = () => {
     if (finished || id !== sayId) return;
     finished = true;
     clearTimeout(timer);
-    if (cb) cb();
+    if (cb) cb(spoke);
   };
-  const timer = setTimeout(finish, 4000 + text.length * 150);
+  // Сигнала «договорил» нет слишком долго, и он даже не начинал — значит, звука нет
+  const timer = setTimeout(() => {
+    if (HAS_TTS && !spoke && id === sayId) { ttsSilent = true; quickCheck(); }
+    finish();
+  }, 4000 + text.length * 150);
   if (!HAS_TTS) { clearTimeout(timer); setTimeout(finish, 300); return; }
   try {
     window.speechSynthesis.cancel();
@@ -238,8 +250,13 @@ function say(text, lang, cb) {
     const v = pickVoice(lang);
     if (v) u.voice = v;
     u.rate = 0.9;
-    u.onend = finish;
-    u.onerror = finish;
+    u.onstart = () => { spoke = true; if (ttsSilent || ttsErr) { ttsSilent = false; ttsErr = null; quickCheck(); } };
+    u.onend = () => { spoke = true; finish(); };
+    u.onerror = e => {
+      const code = e && e.error;
+      if (code && code !== 'interrupted' && code !== 'canceled') { ttsErr = code; quickCheck(); }
+      finish();
+    };
     say.u = u; // держим ссылку, иначе Chrome может «потерять» фразу и не сообщить об окончании
     window.speechSynthesis.speak(u);
   } catch (e) { clearTimeout(timer); setTimeout(finish, 300); }
@@ -253,7 +270,7 @@ function pickVoice(lang) {
   const want = norm(lang), base = want.slice(0, 2);
   return vs.find(v => norm(v.lang) === want) || vs.find(v => norm(v.lang).startsWith(base)) || null;
 }
-if (HAS_TTS) try { window.speechSynthesis.getVoices(); window.speechSynthesis.onvoiceschanged = () => {}; } catch (e) {}
+if (HAS_TTS) try { window.speechSynthesis.getVoices(); window.speechSynthesis.onvoiceschanged = () => quickCheck(); } catch (e) {}
 
 function hush() {
   sayId++;
@@ -285,6 +302,7 @@ function stopAll() {
   if (rec) try { rec.abort(); } catch (e) {}
   document.querySelectorAll('.card.active').forEach(c => c.classList.remove('active'));
   setStopBtn(false);
+  if (fullBusy) { fullBusy = false; quickCheck(); } // прервали полную проверку
 }
 
 function go(i) {
@@ -332,12 +350,13 @@ function listen(i) {
   let got = false;      // ответ уже обработан
   let started = false;  // наш сеанс микрофона действительно запустился
   const mine = () => run && my === sess && started && !got;
-  st(i, '🎙️ Говорите по-английски...', '#fefce8', '#854d0e');
+  st(i, (ttsSilent ? '🔇 Диктора не слышно — проверьте громкость. ' : '') + '🎙️ Говорите по-английски...', '#fefce8', '#854d0e');
 
   rec.onresult = e => {
     if (!mine()) return;
     got = true;
     clearTimeout(guard);
+    if (micErr) { micErr = null; quickCheck(); }
     const res = e.results[0];
     let best = null;
     for (let k = 0; k < res.length; k++) {
@@ -351,7 +370,8 @@ function listen(i) {
     if (!mine() || e.error === 'aborted') return;
     got = true;
     clearTimeout(guard);
-    fail(i, MIC_ERR[e.error] || MIC_ERR['no-speech']);
+    if (e.error !== 'no-speech') { micErr = e.error; quickCheck(); }
+    fail(i, MIC_ERR[e.error] || ('🤔 Микрофон не сработал (код: ' + e.error + '). Нажмите «Повторить» или «🔧 Проверить звук и микрофон» вверху страницы.'));
   };
   rec.onend = () => {
     if (!mine()) return;
@@ -460,7 +480,123 @@ if (!HAS_TTS || !rec) {
   $('warn').innerHTML = '⚠️ В этом браузере нет ' + miss + '. Фразы можно читать, но для полной тренировки откройте сайт в <b>Chrome</b> (Android, компьютер) или <b>Safari</b> (iPhone). Если открыли из Telegram — нажмите «⋮» → «Открыть в браузере».';
   $('warn').style.display = 'block';
 }
+// ===== Самопроверка =====
+// При открытии сайта сама проверяет всё, что можно без нажатия: браузер, интернет, голоса, разрешение микрофона.
+// Включить звук и микрофон без нажатия браузер не разрешает — для этого кнопка «🔧 Проверить звук и микрофон».
+const MIC_SHORT = {
+  'not-allowed': '🚫 микрофон запрещён для сайта (значок 🔒 слева от адреса → Микрофон → Разрешить)',
+  'service-not-allowed': '🚫 распознавание речи запрещено в браузере',
+  'audio-capture': '🎤 микрофон не найден или занят другой программой (громкая связь, голосовой помощник)',
+  'network': '📶 нет интернета — распознавание речи не работает',
+};
+function chkShow(cls, text) {
+  $('chk').className = 'chk' + (cls ? ' ' + cls : '');
+  $('chkT').textContent = text;
+}
+function voicesNow() {
+  try { return window.speechSynthesis.getVoices() || []; } catch (e) { return []; }
+}
+function waitVoices(ms) {
+  return new Promise(res => {
+    const t0 = Date.now();
+    const tick = () => (voicesNow().length || Date.now() - t0 > ms) ? res(voicesNow()) : setTimeout(tick, 200);
+    tick();
+  });
+}
+let chkNo = 0;
+let fullBusy = false;
+async function quickCheck() {
+  if (fullBusy) return;
+  const my = ++chkNo;
+  const p = [];
+  if (!HAS_TTS) p.push('нет голоса диктора в этом браузере');
+  if (!rec) p.push('нет распознавания речи в этом браузере');
+  if (navigator.onLine === false) p.push('📶 нет интернета');
+  if (HAS_TTS) {
+    const vs = await waitVoices(3000);
+    if (my !== chkNo) return;
+    const has = l => vs.some(v => String(v.lang || '').replace('_', '-').toLowerCase().startsWith(l));
+    if (!vs.length) p.push('🔇 голоса диктора не загрузились');
+    else {
+      if (!has('en')) p.push('нет английского голоса');
+      if (!has('ru')) p.push('нет русского голоса');
+    }
+    if (ttsSilent) p.push('🔇 диктора не слышно — проверьте громкость и источник звука');
+    else if (ttsErr === 'not-allowed') p.push('🔇 браузер не дал диктору говорить — нажмите «▶ Начать» или «🔧 Проверить»');
+    else if (ttsErr) p.push('🔇 ошибка диктора (' + ttsErr + ')');
+  }
+  if (rec) {
+    let denied = false;
+    try {
+      const perm = await navigator.permissions.query({ name: 'microphone' });
+      if (my !== chkNo) return;
+      denied = perm.state === 'denied';
+      perm.onchange = () => { if (perm.state !== 'denied' && micErr === 'not-allowed') micErr = null; quickCheck(); };
+    } catch (e) {}
+    if (my !== chkNo) return;
+    if (denied) p.push(MIC_SHORT['not-allowed']);
+    if (micErr && !(denied && micErr === 'not-allowed')) p.push(MIC_SHORT[micErr] || ('🎤 ошибка микрофона (' + micErr + ')'));
+  }
+  if (p.length) chkShow('bad', '⚠️ ' + p.join('; '));
+  else chkShow('good', '✅ Готов к работе');
+}
+
+// Полная проверка по нажатию: диктор говорит фразу, потом микрофон слушает
+function fullCheck() {
+  stopAll();
+  if (!HAS_TTS && !rec) { quickCheck(); return; }
+  fullBusy = true;
+  chkNo++;
+  chkShow('', '🔊 Сейчас прозвучит фраза...');
+  say('Hello! Say: hello.', 'en-US', spoke => {
+    const sound = !HAS_TTS ? 'нет голоса в браузере' : spoke ? null : 'диктора не слышно';
+    if (HAS_TTS) { ttsSilent = !spoke; if (spoke) ttsErr = null; }
+    if (!rec) return fullDone(sound, 'нет распознавания речи в браузере');
+    const my = ++sess;
+    let got = false;
+    let heard = '';
+    const end = text => {
+      if (got || my !== sess) return;
+      got = true;
+      clearTimeout(g);
+      try { rec.abort(); } catch (e) {}
+      fullDone(sound, text, heard);
+    };
+    rec.onresult = e => {
+      try { heard = e.results[0][0].transcript || ''; } catch (x) {}
+      micErr = null;
+      end(heard ? '' : 'ничего не распознал');
+    };
+    rec.onerror = e => {
+      if (e.error === 'aborted') return;
+      if (e.error !== 'no-speech') micErr = e.error;
+      end(e.error === 'no-speech' ? 'ничего не услышал' : (MIC_SHORT[e.error] || 'ошибка ' + e.error));
+    };
+    rec.onend = () => end('ничего не услышал');
+    const g = setTimeout(() => end('ничего не услышал за 8 секунд'), 8000);
+    chkShow('', '🎙️ Скажите в микрофон: hello');
+    const tryStart = n => {
+      if (got || my !== sess) return;
+      try { rec.start(); }
+      catch (e) { if (n < 15) setTimeout(() => tryStart(n + 1), 200); else end('не удалось включить'); }
+    };
+    tryStart(0);
+  });
+}
+function fullDone(sound, mic, heard) {
+  fullBusy = false;
+  chkNo++;
+  const h = heard ? ' Услышано: «' + heard + '».' : '';
+  if (!sound && !mic) chkShow('good', '✅ Готов к работе: звук и микрофон работают.' + h);
+  else chkShow('bad', '⚠️ Звук: ' + (sound ? '❌ ' + sound : '✅') + '. Микрофон: ' + (mic ? '❌ ' + mic : '✅') + '.' + h);
+}
+
+window.addEventListener('online', quickCheck);
+window.addEventListener('offline', quickCheck);
+document.addEventListener('visibilitychange', () => { if (!document.hidden) quickCheck(); });
+
 openLesson(cur);
+quickCheck();
 </script>
 </body>
 </html>
