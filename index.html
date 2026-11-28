@@ -227,39 +227,75 @@ function resetAll() {
 // ===== Голос диктора =====
 // cb вызывается ровно один раз, когда диктор договорил.
 // Страховка по времени: в Chrome иногда не приходит сигнал «договорил» и тренажёр зависал.
+// На Android диктор иногда «засыпает»: фраза принята, но не звучит. Тогда через 2 с будим его и повторяем (до 2 раз).
+const TTS_WAKE_MS = 2000, TTS_RETRIES = 2;
+const ttsStats = { restarts: 0, hung: 0, lastOk: null }; // для панели самопроверки
 function say(text, lang, cb) {
   const id = ++sayId;
   let finished = false;
   let spoke = false; // диктор действительно начал говорить (пришёл сигнал «начал»)
+  let tries = 0, watch = null;
+  // Если и прошлая фраза не прозвучала — не тянем время повторами, ждём только 2 с
+  const retries = ttsSilent ? 0 : TTS_RETRIES;
+  const gaveUp = () => { ttsSilent = true; ttsStats.hung++; ttsStats.lastOk = false; quickCheck(); finish(); };
   const finish = () => {
     if (finished || id !== sayId) return;
     finished = true;
     clearTimeout(timer);
+    clearTimeout(watch);
     if (cb) cb(spoke);
   };
   // Сигнала «договорил» нет слишком долго, и он даже не начинал — значит, звука нет
   const timer = setTimeout(() => {
-    if (HAS_TTS && !spoke && id === sayId) { ttsSilent = true; quickCheck(); }
+    if (HAS_TTS && !spoke && id === sayId) { gaveUp(); return; }
     finish();
-  }, 4000 + text.length * 150);
+  }, 4000 + text.length * 150 + TTS_RETRIES * (TTS_WAKE_MS + 200));
   if (!HAS_TTS) { clearTimeout(timer); setTimeout(finish, 300); return; }
-  try {
-    window.speechSynthesis.cancel();
-    const u = new SpeechSynthesisUtterance(text);
-    u.lang = lang;
-    const v = pickVoice(lang);
-    if (v) u.voice = v;
-    u.rate = 0.9;
-    u.onstart = () => { spoke = true; if (ttsSilent || ttsErr) { ttsSilent = false; ttsErr = null; quickCheck(); } };
-    u.onend = () => { spoke = true; finish(); };
-    u.onerror = e => {
-      const code = e && e.error;
-      if (code && code !== 'interrupted' && code !== 'canceled') { ttsErr = code; quickCheck(); }
-      finish();
-    };
-    say.u = u; // держим ссылку, иначе Chrome может «потерять» фразу и не сообщить об окончании
-    window.speechSynthesis.speak(u);
-  } catch (e) { clearTimeout(timer); setTimeout(finish, 300); }
+
+  const attempt = () => {
+    if (finished || id !== sayId) return;
+    tries++;
+    try {
+      const u = new SpeechSynthesisUtterance(text);
+      u.lang = lang;
+      const v = pickVoice(lang);
+      if (v) u.voice = v;
+      u.rate = 0.9;
+      const mine = () => say.u === u; // события от старых (отменённых) попыток не считаем
+      u.onstart = () => {
+        if (!mine()) return;
+        spoke = true; ttsStats.lastOk = true; clearTimeout(watch);
+        if (ttsSilent || ttsErr) { ttsSilent = false; ttsErr = null; quickCheck(); }
+      };
+      u.onend = () => { if (!mine()) return; spoke = true; ttsStats.lastOk = true; finish(); };
+      u.onerror = e => {
+        if (!mine()) return;
+        const code = e && e.error;
+        if (code && code !== 'interrupted' && code !== 'canceled') { ttsErr = code; quickCheck(); }
+        finish();
+      };
+      say.u = u; // держим ссылку, иначе Chrome может «потерять» фразу и не сообщить об окончании
+      try { window.speechSynthesis.resume(); } catch (e) {} // диктор мог остаться «на паузе» после сворачивания
+      window.speechSynthesis.speak(u);
+      // Не начал говорить за 2 с — будим и повторяем; после последней попытки — «диктора не слышно»
+      watch = setTimeout(() => {
+        if (spoke || finished || id !== sayId) return;
+        if (tries > retries) { gaveUp(); return; }
+        ttsStats.restarts++;
+        say.u = null;
+        try { window.speechSynthesis.cancel(); window.speechSynthesis.resume(); } catch (e) {}
+        setTimeout(attempt, 150);
+      }, TTS_WAKE_MS);
+    } catch (e) { clearTimeout(timer); setTimeout(finish, 300); }
+  };
+
+  // Если прошлая фраза ещё звучит — останавливаем её и ждём 0,1 с:
+  // на Android новая фраза сразу после остановки иногда теряется.
+  let busy = false;
+  try { busy = window.speechSynthesis.speaking || window.speechSynthesis.pending; } catch (e) {}
+  say.u = null;
+  try { window.speechSynthesis.cancel(); } catch (e) {}
+  if (busy) setTimeout(attempt, 100); else attempt(); // без паузы — чтобы iPhone не счёл это «не по нажатию»
 }
 
 // Явно выбираем голос нужного языка (иначе на некоторых телефонах русский читает английский голос)
@@ -493,6 +529,13 @@ function chkShow(cls, text) {
   $('chk').className = 'chk' + (cls ? ' ' + cls : '');
   $('chkT').textContent = text;
 }
+// Подробности о дикторе для панели — чтобы по фото было видно причину
+function ttsInfo() {
+  const vs = voicesNow();
+  const has = l => vs.some(v => String(v.lang || '').replace('_', '-').toLowerCase().startsWith(l));
+  return 'голосов: ' + vs.length + (vs.length ? ' (англ. ' + (has('en') ? '✓' : '✗') + ', рус. ' + (has('ru') ? '✓' : '✗') + ')' : '') +
+    ', перезапусков диктора: ' + ttsStats.restarts + ', зависал: ' + ttsStats.hung + ' раз';
+}
 function voicesNow() {
   try { return window.speechSynthesis.getVoices() || []; } catch (e) { return []; }
 }
@@ -521,7 +564,7 @@ async function quickCheck() {
       if (!has('en')) p.push('нет английского голоса');
       if (!has('ru')) p.push('нет русского голоса');
     }
-    if (ttsSilent) p.push('🔇 диктора не слышно — проверьте громкость и источник звука');
+    if (ttsSilent) p.push('🔇 диктора не слышно — проверьте громкость и источник звука (' + ttsInfo() + ')');
     else if (ttsErr === 'not-allowed') p.push('🔇 браузер не дал диктору говорить — нажмите «▶ Начать» или «🔧 Проверить»');
     else if (ttsErr) p.push('🔇 ошибка диктора (' + ttsErr + ')');
   }
@@ -548,19 +591,21 @@ function fullCheck() {
   fullBusy = true;
   chkNo++;
   chkShow('', '🔊 Сейчас прозвучит фраза...');
+  ttsSilent = false; // по кнопке проверяем «с нуля», с перезапусками диктора
   say('Hello! Say: hello.', 'en-US', spoke => {
     const sound = !HAS_TTS ? 'нет голоса в браузере' : spoke ? null : 'диктора не слышно';
     if (HAS_TTS) { ttsSilent = !spoke; if (spoke) ttsErr = null; }
-    if (!rec) return fullDone(sound, 'нет распознавания речи в браузере');
+    if (!rec) return fullDone(sound, 'нет распознавания речи в браузере', '', false);
     const my = ++sess;
     let got = false;
     let heard = '';
+    let micOn = false; // браузер принял команду «включить микрофон»
     const end = text => {
       if (got || my !== sess) return;
       got = true;
       clearTimeout(g);
       try { rec.abort(); } catch (e) {}
-      fullDone(sound, text, heard);
+      fullDone(sound, text, heard, micOn);
     };
     rec.onresult = e => {
       try { heard = e.results[0][0].transcript || ''; } catch (x) {}
@@ -577,18 +622,19 @@ function fullCheck() {
     chkShow('', '🎙️ Скажите в микрофон: hello');
     const tryStart = n => {
       if (got || my !== sess) return;
-      try { rec.start(); }
+      try { rec.start(); micOn = true; }
       catch (e) { if (n < 15) setTimeout(() => tryStart(n + 1), 200); else end('не удалось включить'); }
     };
     tryStart(0);
   });
 }
-function fullDone(sound, mic, heard) {
+function fullDone(sound, mic, heard, micOn) {
   fullBusy = false;
   chkNo++;
   const h = heard ? ' Услышано: «' + heard + '».' : '';
   if (!sound && !mic) chkShow('good', '✅ Готов к работе: звук и микрофон работают.' + h);
-  else chkShow('bad', '⚠️ Звук: ' + (sound ? '❌ ' + sound : '✅') + '. Микрофон: ' + (mic ? '❌ ' + mic : '✅') + '.' + h);
+  else chkShow('bad', '⚠️ Звук: ' + (sound ? '❌ ' + sound : '✅') + '. Микрофон: ' + (mic ? '❌ ' + mic : '✅') + '.' + h +
+    ' Подробности: ' + (HAS_TTS ? ttsInfo() + '; ' : '') + 'микрофон ' + (micOn ? 'включился' : 'не включился') + '.');
 }
 
 window.addEventListener('online', quickCheck);
