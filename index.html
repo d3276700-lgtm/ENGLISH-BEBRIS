@@ -449,9 +449,25 @@ function success(i, said) {
     $('c' + i).classList.add('done');
     showProgress();
   }
-  say('Okay!', 'en-US', () => {
-    if (run) setTimeout(() => step(i + 1), 400);
+  // На Android, пока микрофон включён, звук в режиме «разговора» и короткое «Okay» глотается.
+  // Поэтому сначала выключаем микрофон, ждём 0,5 с, потом «Okay».
+  const my = sess;
+  afterMicOff(() => {
+    if (!run || my !== sess) return;
+    say('Okay!', 'en-US', () => {
+      if (run && my === sess) setTimeout(() => step(i + 1), 400);
+    });
   });
+}
+
+// Выключить микрофон, дождаться подтверждения (не дольше 1,5 с), потом ещё 0,5 с — и cb
+function afterMicOff(cb) {
+  let called = false;
+  const t = setTimeout(() => go(), 1500);
+  const go = () => { if (called) return; called = true; clearTimeout(t); setTimeout(cb, 500); };
+  if (!rec) { go(); return; }
+  rec.onend = go;
+  try { rec.abort(); } catch (e) { go(); }
 }
 
 // Ошибка: показываем надпись и кнопки, сами ничего не повторяем
